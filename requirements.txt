@@ -7,3 +7,4 @@ python-dotenv
 email-validator
 Flask-Bcrypt
 # pyjson5==1.6.2
+mongomock
