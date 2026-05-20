@@ -166,7 +166,7 @@
     {% if t_total > 0 %}
         {% set t_percent = (t_done / t_total * 100) | round(1) %}
     {% endif %}
-    <a href="{{ url_for('topic', topic_id=t_id_str) }}" class="topic-card">
+    <a href="{{ url_for('tracker.topic', topic_id=t_id_str) }}" class="topic-card">
         <div class="topic-card-name">{{ topic.name }}</div>
         <div class="topic-card-sub">{{ t_done }} / {{ t_total }} questions completed</div>
         <div class="topic-progress-row">
