@@ -328,15 +328,16 @@
 
 {% if questions %}
 <div class="q-wrap">
-  <table class="q-table">
+  <table class="q-table" aria-label="Bookmarked questions">
+    <caption class="visually-hidden">Bookmarked questions</caption>
     <thead>
       <tr>
-        <th>#</th>
-        <th>Done</th>
-        <th>Topic</th>
-        <th>Problem</th>
-        <th>Save</th>
-        <th>Notes</th>
+        <th scope="col">#</th>
+        <th scope="col">Done</th>
+        <th scope="col">Topic</th>
+        <th scope="col">Problem</th>
+        <th scope="col">Save</th>
+        <th scope="col">Notes</th>
       </tr>
     </thead>
     <tbody>
@@ -345,8 +346,9 @@
       {% set p = progress_dict.get(q_id_str) %}
       <tr id="brow-{{ q_id_str }}">
         <td class="q-num">{{ loop.index }}</td>
-        <td><input type="checkbox" class="q-checkbox status-checkbox" data-id="{{ q_id_str }}" {% if p and p.done
-            %}checked{% endif %}></td>
+        <td><input type="checkbox" class="q-checkbox status-checkbox" data-id="{{ q_id_str }}"
+            aria-label="Mark '{{ q.problem }}' as done"
+            {% if p and p.done %}checked{% endif %}></td>
         <td><span class="topic-tag">{{ q.topic_name }}</span></td>
         <td>
           <div class="q-name">{{ q.problem }}</div>
@@ -361,14 +363,15 @@
         </td>
         <td>
           <button class="action-icon bookmark-btn" data-id="{{ q_id_str }}" data-bookmarked="true"
-            title="Remove bookmark">
-            <i class="bi bi-bookmark-fill"></i>
+            aria-label="Remove bookmark for {{ q.problem }}" aria-pressed="true">
+            <i class="bi bi-bookmark-fill" aria-hidden="true"></i>
           </button>
         </td>
         <td>
           <button class="notes-btn-sm {% if p and p.notes %}has-notes{% endif %} notes-btn" data-id="{{ q_id_str }}"
-            data-notes="{{ p.notes if p and p.notes else '' }}">
-            <i class="bi bi-journal-text"></i> {% if p and p.notes %}Edit{% else %}Add{% endif %}
+            data-notes="{{ p.notes if p and p.notes else '' }}"
+            aria-label="{% if p and p.notes %}Edit notes for {{ q.problem }}{% else %}Add notes for {{ q.problem }}{% endif %}">
+            <i class="bi bi-journal-text" aria-hidden="true"></i> {% if p and p.notes %}Edit{% else %}Add{% endif %}
           </button>
         </td>
       </tr>
@@ -384,10 +387,10 @@
 </div>
 {% endif %}
 
-<div class="modal-ov" id="notesModal">
+<div class="modal-ov" id="notesModal" role="dialog" aria-modal="true" aria-labelledby="notesModalTitle">
   <div class="modal-bx">
-    <h3><i class="bi bi-journal-text"></i> Notes</h3>
-    <textarea class="modal-textarea" id="notesTextarea" placeholder="Write your notes here..."></textarea>
+    <h3 id="notesModalTitle"><i class="bi bi-journal-text" aria-hidden="true"></i> Notes</h3>
+    <textarea class="modal-textarea" id="notesTextarea" placeholder="Write your notes here..." aria-label="Notes"></textarea>
     <input type="hidden" id="currentQuestionId">
     <div class="modal-actions">
       <button class="btn-cancel" id="modalCancel">Cancel</button>
@@ -399,6 +402,33 @@
 
 {% block scripts %}
 <script>
+  const FOCUSABLE = 'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])';
+  const modal = document.getElementById('notesModal');
+
+  function openModal(triggerEl) {
+    modal.classList.add('open');
+    modal._trigger = triggerEl;
+    const focusable = modal.querySelectorAll(FOCUSABLE);
+    if (focusable.length) focusable[0].focus();
+    modal.addEventListener('keydown', trapFocus);
+  }
+
+  function closeModal() {
+    modal.classList.remove('open');
+    modal.removeEventListener('keydown', trapFocus);
+    if (modal._trigger) modal._trigger.focus();
+  }
+
+  function trapFocus(e) {
+    const focusable = Array.from(modal.querySelectorAll(FOCUSABLE));
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.key === 'Tab') {
+      if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
+      else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
+    }
+    if (e.key === 'Escape') closeModal();
+  }
+
   function updateQuestion(id, data, callback) {
     fetch('/update_question/' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       .then(r => r.json()).then(res => { if (res.success) callback(); })
@@ -415,23 +445,28 @@
       });
     });
   });
-  const modal = document.getElementById('notesModal');
   document.querySelectorAll('.notes-btn').forEach(btn => {
     btn.addEventListener('click', function () {
       document.getElementById('currentQuestionId').value = this.dataset.id;
       document.getElementById('notesTextarea').value = this.dataset.notes || '';
-      modal.classList.add('open');
+      openModal(this);
     });
   });
-  document.getElementById('modalCancel').addEventListener('click', () => modal.classList.remove('open'));
-  modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
+  document.getElementById('modalCancel').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
   document.getElementById('saveNotesBtn').addEventListener('click', function () {
     const qId = document.getElementById('currentQuestionId').value;
     const notes = document.getElementById('notesTextarea').value;
     updateQuestion(qId, { notes: notes }, () => {
-      modal.classList.remove('open');
+      closeModal();
       const btn = document.querySelector(`.notes-btn[data-id="${qId}"]`);
-      if (btn) { btn.dataset.notes = notes; btn.classList.toggle('has-notes', notes.trim() !== ''); btn.innerHTML = `<i class="bi bi-journal-text"></i> ${notes.trim() ? 'Edit' : 'Add'}`; }
+      if (btn) {
+        btn.dataset.notes = notes;
+        btn.classList.toggle('has-notes', notes.trim() !== '');
+        const label = notes.trim() ? 'Edit' : 'Add';
+        btn.innerHTML = `<i class="bi bi-journal-text" aria-hidden="true"></i> ${label}`;
+        btn.setAttribute('aria-label', `${label} notes for this question`);
+      }
     });
   });
 </script>

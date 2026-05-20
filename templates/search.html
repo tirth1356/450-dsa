@@ -145,15 +145,16 @@
   </div>
 
   <div class="search-panel">
-    <div class="search-box">
-      <i class="bi bi-search"></i>
+    <div class="search-box" role="search">
+      <i class="bi bi-search" aria-hidden="true"></i>
       <input id="searchInput" class="search-input" value="{{ initial_query }}" autocomplete="off" autofocus
-        placeholder="Search arrays, kadane, lc two sum, gfg graph, cn dp...">
-      <button id="clearSearch" class="clear-btn" type="button" title="Clear">
-        <i class="bi bi-x-lg"></i>
+        placeholder="Search arrays, kadane, lc two sum, gfg graph, cn dp..."
+        aria-label="Search DSA questions" aria-controls="results" aria-autocomplete="list">
+      <button id="clearSearch" class="clear-btn" type="button" aria-label="Clear search">
+        <i class="bi bi-x-lg" aria-hidden="true"></i>
       </button>
     </div>
-    <div class="platform-row" aria-label="Platform filters">
+    <div class="platform-row" role="group" aria-label="Filter by platform">
       <button class="platform-chip" type="button" data-token="">All</button>
       <button class="platform-chip" type="button" data-token="leetcode">LeetCode</button>
       <button class="platform-chip" type="button" data-token="gfg">GFG</button>
@@ -162,8 +163,8 @@
     </div>
   </div>
 
-  <div id="searchMeta" class="search-meta"></div>
-  <div id="results" class="result-list"></div>
+  <div id="searchMeta" class="search-meta" aria-live="polite" aria-atomic="true"></div>
+  <div id="results" class="result-list" aria-live="polite" aria-atomic="true"></div>
 </div>
 {% endblock %}
 

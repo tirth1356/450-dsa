@@ -152,7 +152,7 @@
         <div class="numbers">{{ done_questions }} / {{ total_questions }}</div>
         <div class="pct">{{ percentage }}% completed</div>
     </div>
-    <div class="progress-track">
+    <div class="progress-track" role="progressbar" aria-valuenow="{{ percentage }}" aria-valuemin="0" aria-valuemax="100" aria-label="Overall progress: {{ percentage }}%">
         <div class="progress-fill" style="width: {{ percentage }}%;"></div>
     </div>
 </div>
@@ -166,14 +166,15 @@
     {% if t_total > 0 %}
         {% set t_percent = (t_done / t_total * 100) | round(1) %}
     {% endif %}
-    <a href="{{ url_for('topic', topic_id=t_id_str) }}" class="topic-card">
+    <a href="{{ url_for('topic', topic_id=t_id_str) }}" class="topic-card"
+       aria-label="{{ topic.name }}: {{ t_done }} of {{ t_total }} questions completed, {{ t_percent }}%">
         <div class="topic-card-name">{{ topic.name }}</div>
         <div class="topic-card-sub">{{ t_done }} / {{ t_total }} questions completed</div>
         <div class="topic-progress-row">
-            <div class="topic-track">
+            <div class="topic-track" role="progressbar" aria-valuenow="{{ t_percent }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ topic.name }} progress">
                 <div class="topic-fill {% if t_percent == 100 %}done{% elif t_percent > 0 %}partial{% else %}empty{% endif %}" style="width: {{ t_percent }}%;"></div>
             </div>
-            <span class="topic-pct">{{ t_percent }}%</span>
+            <span class="topic-pct" aria-hidden="true">{{ t_percent }}%</span>
         </div>
         <span class="topic-action-btn {% if t_percent == 100 %}completed{% elif t_percent > 0 %}started{% endif %}">
             {% if t_percent == 100 %}
