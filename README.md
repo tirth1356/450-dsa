@@ -134,3 +134,22 @@ Flask version conversion: 2026
 ## Credits 🙏🏻
 
 #### Curated list of question in [450dsa] is based on _[DSA Cracker Sheet]_ by [Love Babbar]
+
+
+
+## Docker Quick Start
+
+### Prerequisites
+- Docker Desktop installed
+
+### Run with Docker
+
+```bash
+git clone https://github.com/mohitkumhar/450-dsa.git
+cd 450-dsa
+docker compose up
+```
+
+Open the application at:
+
+http://localhost:5000
