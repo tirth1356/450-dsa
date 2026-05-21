@@ -870,35 +870,6 @@ def update_question(question_id):
     
     return jsonify({"success": True})
 
-@app.route('/mark_done/<question_id>', methods=['POST'])
-@login_required
-def mark_done(question_id):
-    """Mark a question as done (for POTD feature)"""
-    try:
-        question = db.question.find_one({'_id': ObjectId(question_id)})
-    except Exception:
-        return jsonify({"success": False, "error": "Question not found"}), 404
-    
-    if not question:
-        return jsonify({"success": False, "error": "Question not found"}), 404
-    
-    user_id = current_user.id
-    
-    # Check if already marked as done
-    progress = current_user.progress or {}
-    if progress.get(question_id, {}).get('done'):
-        return jsonify({"success": True, "message": "Already marked as done"})
-    
-    # Mark as done with timestamp
-    update_fields = {
-        f'progress.{question_id}.done': True,
-        f'progress.{question_id}.timestamp': datetime.utcnow()
-    }
-    
-    db.user.update_one({'_id': user_id}, {'$set': update_fields})
-    current_user.reload()
-    
-    return jsonify({"success": True, "message": "Problem marked as done!"})
 
 @app.route('/sync_platforms', methods=['POST'])
 @login_required

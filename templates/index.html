@@ -312,13 +312,13 @@
             {% endif %}
             <div class="potd-meta-item">
                 <i class="bi bi-calendar-event"></i>
-                {{ "now" | default("Today") }}
+                {{ now | default("Today") }}
             </div>
         </div>
     </div>
     <div class="potd-actions">
         {% if potd.url %}
-        <a href="{{ potd.url }}" target="_blank" class="potd-btn primary">
+        <a href="{{ potd.url }}" target="_blank" rel="noopener noreferrer" class="potd-btn primary">
             <i class="bi bi-arrow-up-right"></i> Solve Now
         </a>
         {% endif %}
@@ -333,16 +333,17 @@
 <script>
 function markPotdDone(questionId) {
     if (confirm('Mark this problem as done?')) {
-        fetch(`/mark_done/${questionId}`, {
+        fetch(`/update_question/${questionId}`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'}
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ done: true })
         })
         .then(r => r.json())
         .then(data => {
             if (data.success) {
                 const btn = document.getElementById('potd-mark-done-btn');
                 btn.classList.add('done');
-                btn.textContent = '✓ Marked Done';
+                btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Marked Done';
                 btn.disabled = true;
             }
         });
