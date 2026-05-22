@@ -7,6 +7,7 @@ from flask import Flask, session
 
 from app.admin import admin_bp
 from app.auth import auth_bp
+from app.faq import faq_bp
 from app.extensions import bcrypt, db, limiter, login_manager, mongo, oauth, cache
 from app.leaderboard import leaderboard_bp
 from app.profile import profile_bp
@@ -116,6 +117,7 @@ def create_app():
         return {"csrf_token": csrf_token}
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(faq_bp)  
     app.register_blueprint(tracker_bp)
     app.register_blueprint(profile_bp)
     app.register_blueprint(leaderboard_bp)
