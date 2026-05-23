@@ -58,6 +58,12 @@ def topic(topic_id):
 
     questions = list(db.question.find({"topic": topic_doc["_id"]}))
     
+    # Calculate counts based on the unfiltered list of questions
+    total_count = len(questions)
+    easy_count = sum(1 for q in questions if q.get('difficulty', 'Medium') == 'Easy')
+    medium_count = sum(1 for q in questions if q.get('difficulty', 'Medium') == 'Medium')
+    hard_count = sum(1 for q in questions if q.get('difficulty', 'Medium') == 'Hard')
+    
     # Get difficulty filter from query parameter
     difficulty_filter = request.args.get('difficulty', 'all')
     
@@ -72,7 +78,11 @@ def topic(topic_id):
         topic=topic_doc, 
         questions=questions, 
         progress_dict=progress_dict,
-        difficulty_filter=difficulty_filter
+        difficulty_filter=difficulty_filter,
+        total_count=total_count,
+        easy_count=easy_count,
+        medium_count=medium_count,
+        hard_count=hard_count
     )
 
 
@@ -96,6 +106,56 @@ def export_topic_notes(topic_id):
 @tracker_bp.route("/update_question/<question_id>", methods=["POST"])
 @login_required
 def update_question(question_id):
+    """Update the authenticated user's progress for a question.
+    ---
+    tags:
+      - Tracker
+    parameters:
+      - name: question_id
+        in: path
+        type: string
+        required: true
+        description: MongoDB ObjectId of the question to update.
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            done:
+              type: boolean
+              description: Whether the question is completed.
+            bookmark:
+              type: boolean
+              description: Whether the question is bookmarked.
+            notes:
+              type: string
+              description: User notes for the question.
+    security:
+      - SessionAuth: []
+    responses:
+      200:
+        description: Question progress updated successfully.
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: true
+      401:
+        description: Login required.
+      404:
+        description: Question not found.
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            error:
+              type: string
+              example: Question not found
+    """
     try:
         question = db.question.find_one({"_id": ObjectId(question_id)})
     except Exception:
