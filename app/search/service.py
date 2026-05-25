@@ -84,11 +84,80 @@ def question_links(question):
     return links
 
 
-def search_dsa_questions(raw_query, limit=40, db_handle=None):
+PLATFORM_FILTER_MAP = {
+    "lc": "LeetCode",
+    "gfg": "GFG",
+    "cn": "Coding Ninjas",
+    "hr": "HackerRank",
+}
+
+PLATFORM_URL_KEYWORDS = {
+    "LeetCode": "leetcode.com",
+    "GFG": "geeksforgeeks.org",
+    "Coding Ninjas": "codingninjas.com",
+    "HackerRank": "hackerrank.com",
+}
+
+DIFFICULTY_KEYWORDS = {
+    "easy": ["easy"],
+    "medium": ["medium"],
+    "hard": ["hard"],
+}
+
+
+def search_dsa_questions(raw_query, limit=40, db_handle=None, filters=None, progress=None):
     db_handle = db_handle or db
+    filters = filters or {}
+    progress = progress or {}
     query, requested_platforms = parse_search_query(raw_query)
     query_tokens = tokenize_search_text(query)
-    if not query_tokens:
+
+    # Build MongoDB query (AND logic)
+    mongo_query = {}
+    if query_tokens:
+        mongo_query["$text"] = {"$search": query}
+
+    # Topic filter — push into MongoDB
+    topic_id_str = filters.get("topic_id", "")
+    if topic_id_str:
+        try:
+            from bson import ObjectId
+            mongo_query["topic"] = ObjectId(topic_id_str)
+        except Exception:
+            pass
+
+    # Platform filter — push into MongoDB via URL regex
+    platform_filter = filters.get("platform", "")
+    platform_name = PLATFORM_FILTER_MAP.get(platform_filter, "")
+    if platform_name:
+        url_keyword = PLATFORM_URL_KEYWORDS.get(platform_name, "")
+        if url_keyword:
+            mongo_query["$or"] = [
+                {"url": {"$regex": url_keyword, "$options": "i"}},
+                {"url2": {"$regex": url_keyword, "$options": "i"}},
+            ]
+
+    # Status filter — push done/bookmarked into MongoDB via $in on progress IDs
+    status_filter = filters.get("status", "")
+    if status_filter and progress:
+        if status_filter == "done":
+            ids = [q_id for q_id, p in progress.items() if p.get("done")]
+            try:
+                from bson import ObjectId
+                mongo_query["_id"] = {"$in": [ObjectId(i) for i in ids]}
+            except Exception:
+                pass
+        elif status_filter == "bookmarked":
+            ids = [q_id for q_id, p in progress.items() if p.get("bookmark")]
+            try:
+                from bson import ObjectId
+                mongo_query["_id"] = {"$in": [ObjectId(i) for i in ids]}
+            except Exception:
+                pass
+        # undone handled post-fetch
+
+    # No query and no filters — return empty
+    if not mongo_query:
         return {
             "query": query,
             "requested_platforms": requested_platforms,
@@ -96,58 +165,60 @@ def search_dsa_questions(raw_query, limit=40, db_handle=None):
             "external_searches": [],
         }
 
-    cursor = (
-        db_handle.question.find(
-            {"$text": {"$search": query}},
-            {
-                "problem": 1,
-                "topic": 1,
-                "url": 1,
-                "url2": 1,
-                "score": {"$meta": "textScore"},
-            },
-        )
-        .sort([("score", {"$meta": "textScore"})])
-        .limit(limit)
-    )
+    projection = {"problem": 1, "topic": 1, "url": 1, "url2": 1}
+    if query_tokens:
+        projection["score"] = {"$meta": "textScore"}
+        cursor = db_handle.question.find(mongo_query, projection).sort([("score", {"$meta": "textScore"})]).limit(limit * 4)
+    else:
+        cursor = db_handle.question.find(mongo_query, projection).limit(limit * 4)
+
     questions = list(cursor)
     topic_ids = list({question.get("topic") for question in questions if question.get("topic")})
     topics = (
-        {
-            topic["_id"]: topic
-            for topic in db_handle.topic.find({"_id": {"$in": topic_ids}}, {"name": 1, "position": 1})
-        }
-        if topic_ids
-        else {}
+        {topic["_id"]: topic for topic in db_handle.topic.find({"_id": {"$in": topic_ids}}, {"name": 1, "position": 1})}
+        if topic_ids else {}
     )
 
     results = []
     for question in questions:
+        q_id_str = str(question["_id"])
         topic_doc = topics.get(question.get("topic"), {})
         problem = question.get("problem", "")
         topic_name = topic_doc.get("name", "Unknown")
         links = question_links(question)
+        p = progress.get(q_id_str, {})
 
+        # Platform filter from text query tokens (post-fetch)
         if requested_platforms and not any(link["platform"] in requested_platforms for link in links):
             continue
 
-        results.append(
-            {
-                "id": str(question["_id"]),
-                "problem": problem,
-                "topic": topic_name,
-                "topic_id": str(question.get("topic")),
-                "topic_position": topic_doc.get("position", 999),
-                "links": links,
-                "external_searches": build_external_searches(problem, requested_platforms),
-                "score": question.get("score", 0),
-            }
-        )
+        # Difficulty filter — keyword match against problem name (post-fetch)
+        difficulty_filter = filters.get("difficulty", "")
+        if difficulty_filter in DIFFICULTY_KEYWORDS:
+            if not any(kw in problem.lower() for kw in DIFFICULTY_KEYWORDS[difficulty_filter]):
+                continue
+
+        # Undone — post-fetch (cheaper than $nin on large dynamic list)
+        if status_filter == "undone" and p.get("done"):
+            continue
+
+        results.append({
+            "id": q_id_str,
+            "problem": problem,
+            "topic": topic_name,
+            "topic_id": str(question.get("topic")),
+            "topic_position": topic_doc.get("position", 999),
+            "links": links,
+            "external_searches": build_external_searches(problem, requested_platforms),
+            "score": question.get("score", 0),
+            "done": p.get("done", False),
+            "bookmarked": p.get("bookmark", False),
+        })
 
     return {
         "query": query,
         "requested_platforms": requested_platforms,
-        "results": results,
+        "results": results[:limit],
         "external_searches": build_external_searches(query, requested_platforms),
     }
 
