@@ -1,6 +1,8 @@
 import re
 from urllib.parse import quote_plus
 
+from bson import ObjectId
+
 from app.extensions import db
 
 
@@ -98,10 +100,10 @@ PLATFORM_URL_KEYWORDS = {
     "HackerRank": "hackerrank.com",
 }
 
-DIFFICULTY_KEYWORDS = {
-    "easy": ["easy"],
-    "medium": ["medium"],
-    "hard": ["hard"],
+DIFFICULTY_FILTERS = {
+    "easy": "Easy",
+    "medium": "Medium",
+    "hard": "Hard",
 }
 
 
@@ -111,23 +113,33 @@ def search_dsa_questions(raw_query, limit=40, db_handle=None, filters=None, prog
     progress = progress or {}
     query, requested_platforms = parse_search_query(raw_query)
     query_tokens = tokenize_search_text(query)
+    topic_id_str = filters.get("topic_id", "")
+    difficulty_filter = filters.get("difficulty", "")
+    platform_filter = filters.get("platform", "")
+    status_filter = filters.get("status", "")
+    has_filters = any((topic_id_str, difficulty_filter, platform_filter, status_filter))
 
-    # Build MongoDB query (AND logic)
+    def empty_payload():
+        return {
+            "query": query,
+            "requested_platforms": requested_platforms,
+            "results": [],
+            "external_searches": [],
+        }
+
+    if not query_tokens and not has_filters:
+        return empty_payload()
+
     mongo_query = {}
     if query_tokens:
         mongo_query["$text"] = {"$search": query}
 
-    # Topic filter — push into MongoDB
-    topic_id_str = filters.get("topic_id", "")
     if topic_id_str:
         try:
-            from bson import ObjectId
             mongo_query["topic"] = ObjectId(topic_id_str)
         except Exception:
-            pass
+            return empty_payload()
 
-    # Platform filter — push into MongoDB via URL regex
-    platform_filter = filters.get("platform", "")
     platform_name = PLATFORM_FILTER_MAP.get(platform_filter, "")
     if platform_name:
         url_keyword = PLATFORM_URL_KEYWORDS.get(platform_name, "")
@@ -137,46 +149,45 @@ def search_dsa_questions(raw_query, limit=40, db_handle=None, filters=None, prog
                 {"url2": {"$regex": url_keyword, "$options": "i"}},
             ]
 
-    # Status filter — push done/bookmarked into MongoDB via $in on progress IDs
-    status_filter = filters.get("status", "")
-    if status_filter and progress:
-        if status_filter == "done":
-            ids = [q_id for q_id, p in progress.items() if p.get("done")]
-            try:
-                from bson import ObjectId
-                mongo_query["_id"] = {"$in": [ObjectId(i) for i in ids]}
-            except Exception:
-                pass
-        elif status_filter == "bookmarked":
-            ids = [q_id for q_id, p in progress.items() if p.get("bookmark")]
-            try:
-                from bson import ObjectId
-                mongo_query["_id"] = {"$in": [ObjectId(i) for i in ids]}
-            except Exception:
-                pass
-        # undone handled post-fetch
-
-    # No query and no filters — return empty
-    if not mongo_query:
-        return {
-            "query": query,
-            "requested_platforms": requested_platforms,
-            "results": [],
-            "external_searches": [],
-        }
+    if status_filter in ("done", "bookmarked"):
+        flag = "done" if status_filter == "done" else "bookmark"
+        ids = [question_id for question_id, item in progress.items() if item.get(flag)]
+        if not ids:
+            return empty_payload()
+        try:
+            mongo_query["_id"] = {"$in": [ObjectId(question_id) for question_id in ids]}
+        except Exception:
+            return empty_payload()
 
     projection = {"problem": 1, "topic": 1, "url": 1, "url2": 1}
+    post_fetch_filters = bool(
+        requested_platforms
+        or difficulty_filter in DIFFICULTY_FILTERS
+        or status_filter == "undone"
+    )
+    fetch_limit = limit * 4 if post_fetch_filters else limit
+    if difficulty_filter in DIFFICULTY_FILTERS:
+        projection["difficulty"] = 1
+
     if query_tokens:
         projection["score"] = {"$meta": "textScore"}
-        cursor = db_handle.question.find(mongo_query, projection).sort([("score", {"$meta": "textScore"})]).limit(limit * 4)
+        cursor = (
+            db_handle.question.find(mongo_query, projection)
+            .sort([("score", {"$meta": "textScore"})])
+            .limit(fetch_limit)
+        )
     else:
-        cursor = db_handle.question.find(mongo_query, projection).limit(limit * 4)
+        cursor = db_handle.question.find(mongo_query, projection).limit(fetch_limit)
 
     questions = list(cursor)
     topic_ids = list({question.get("topic") for question in questions if question.get("topic")})
     topics = (
-        {topic["_id"]: topic for topic in db_handle.topic.find({"_id": {"$in": topic_ids}}, {"name": 1, "position": 1})}
-        if topic_ids else {}
+        {
+            topic["_id"]: topic
+            for topic in db_handle.topic.find({"_id": {"$in": topic_ids}}, {"name": 1, "position": 1})
+        }
+        if topic_ids
+        else {}
     )
 
     results = []
@@ -186,34 +197,32 @@ def search_dsa_questions(raw_query, limit=40, db_handle=None, filters=None, prog
         problem = question.get("problem", "")
         topic_name = topic_doc.get("name", "Unknown")
         links = question_links(question)
-        p = progress.get(q_id_str, {})
+        progress_item = progress.get(q_id_str, {})
 
-        # Platform filter from text query tokens (post-fetch)
         if requested_platforms and not any(link["platform"] in requested_platforms for link in links):
             continue
 
-        # Difficulty filter — keyword match against problem name (post-fetch)
-        difficulty_filter = filters.get("difficulty", "")
-        if difficulty_filter in DIFFICULTY_KEYWORDS:
-            if not any(kw in problem.lower() for kw in DIFFICULTY_KEYWORDS[difficulty_filter]):
+        if difficulty_filter in DIFFICULTY_FILTERS:
+            if question.get("difficulty", "Medium") != DIFFICULTY_FILTERS[difficulty_filter]:
                 continue
 
-        # Undone — post-fetch (cheaper than $nin on large dynamic list)
-        if status_filter == "undone" and p.get("done"):
+        if status_filter == "undone" and progress_item.get("done"):
             continue
 
-        results.append({
-            "id": q_id_str,
-            "problem": problem,
-            "topic": topic_name,
-            "topic_id": str(question.get("topic")),
-            "topic_position": topic_doc.get("position", 999),
-            "links": links,
-            "external_searches": build_external_searches(problem, requested_platforms),
-            "score": question.get("score", 0),
-            "done": p.get("done", False),
-            "bookmarked": p.get("bookmark", False),
-        })
+        results.append(
+            {
+                "id": q_id_str,
+                "problem": problem,
+                "topic": topic_name,
+                "topic_id": str(question.get("topic")),
+                "topic_position": topic_doc.get("position", 999),
+                "links": links,
+                "external_searches": build_external_searches(problem, requested_platforms),
+                "score": question.get("score", 0),
+                "done": progress_item.get("done", False),
+                "bookmarked": progress_item.get("bookmark", False),
+            }
+        )
 
     return {
         "query": query,

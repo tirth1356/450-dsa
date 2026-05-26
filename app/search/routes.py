@@ -11,28 +11,16 @@ search_bp = Blueprint("search", __name__)
 @search_bp.route("/search")
 def search():
     initial_query = request.args.get("q", "").strip()
-    topics = list(db.topic.find({}, {"name": 1}).sort("position", 1))
+    try:
+        topics = list(db.topic.find({}, {"name": 1}).sort("position", 1))
+    except Exception:
+        topics = []
     return render_template("search.html", initial_query=initial_query, topics=topics)
 
 
 @search_bp.route("/api/search_questions")
 @limiter.limit("30 per minute")
 def api_search_questions():
-    raw_query = request.args.get("q", "")
-    try:
-        limit = min(max(int(request.args.get("limit", 40)), 1), 80)
-    except ValueError:
-        limit = 40
-
-    filters = {
-        "topic_id": request.args.get("topic_id", "").strip(),
-        "difficulty": request.args.get("difficulty", "").strip().lower(),
-        "platform": request.args.get("platform", "").strip().lower(),
-        "status": request.args.get("status", "").strip().lower(),
-    }
-    progress = current_user.progress if current_user.is_authenticated else {}
-    payload = search_dsa_questions(raw_query, limit=limit, filters=filters, progress=progress)
-    return jsonify(payload)
     """Return question search results and external search suggestions.
     ---
     tags:
@@ -106,5 +94,12 @@ def api_search_questions():
     except ValueError:
         limit = 40
 
-    payload = search_dsa_questions(raw_query, limit=limit)
+    filters = {
+        "topic_id": request.args.get("topic_id", "").strip(),
+        "difficulty": request.args.get("difficulty", "").strip().lower(),
+        "platform": request.args.get("platform", "").strip().lower(),
+        "status": request.args.get("status", "").strip().lower(),
+    }
+    progress = current_user.progress if current_user.is_authenticated else {}
+    payload = search_dsa_questions(raw_query, limit=limit, filters=filters, progress=progress)
     return jsonify(payload)
