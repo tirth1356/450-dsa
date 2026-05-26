@@ -558,9 +558,11 @@ body.modal-open {
 const endpointConfig = {{ {
   "editProfile": url_for('profile.edit_profile'),
   "syncPlatforms": url_for('profile.sync_platforms'),
+  "uploadPhoto": url_for('profile.upload_photo'),
   "searchUniversities": url_for('profile.search_universities'),
   "publicCardPath": url_for('profile.public_card', user_id=user.id),
 }|tojson }};
+const csrfToken = {{ csrf_token()|tojson }};
 
 // ── Event Listeners (registered first so Chart.js failure can't break them) ──
 window.handleSaveProfile = function(btn){
@@ -577,7 +579,7 @@ window.handleSaveProfile = function(btn){
     resume_url: document.getElementById('ep_resume').value,
   };
   window.setButtonBusyState(btn, contentEl, { busy: true, busyLabel: 'Saving...' });
-  fetch(endpointConfig.editProfile,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+  fetch(endpointConfig.editProfile,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},body:JSON.stringify(payload)})
     .then(r=>r.json())
     .then(res=>{
       if(res.success){
@@ -615,7 +617,7 @@ window.handleQuickSync = function(btn) {
   
   fetch(endpointConfig.syncPlatforms, {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},
     body:JSON.stringify({leetcode:lc,github:gh,gfg:gfg,hackerrank:hr,codingninjas:cn})
   })
   .then(r => r.json())
@@ -672,7 +674,7 @@ window.handleSyncProfile = function(btn){
 
   fetch(endpointConfig.syncPlatforms,{
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},
     body:JSON.stringify({leetcode:lc,github:gh,gfg:gfg,hackerrank:hr,codingninjas:cn}),
     signal:ctrl.signal
   })
@@ -778,7 +780,7 @@ function handlePhotoUpload(e){
   const fd=new FormData();
   fd.append('photo',file);
   showToast('⏳ Uploading photo...');
-  fetch('/upload_photo',{method:'POST',body:fd})
+  fetch(endpointConfig.uploadPhoto,{method:'POST',headers:{'X-CSRFToken':csrfToken},body:fd})
     .then(r=>r.json())
     .then(res=>{
       if(res.success){
